@@ -237,13 +237,184 @@ Paper 系同名配置可能已被 `paper-global.yml` 接管，改前确认优先
 
 ---
 
-## 7. 建议的工作流
+## 7. 详细流程（SOP）
 
-1. 备份世界与配置。
-2. 记录基线：启动时间、tick 中位/p95/max、GC 停顿、TPS。
-3. 先做零机制风险的项：JVM、`server.properties`、系统层。
-4. 再审计 mod 配置：按 §2.4 的框架，逐项关闭有行为差异的开关，每轮启动看日志确认生效。
-5. 最后处理数据不可逆项，确认世界数据后再动。
-6. 每轮用同一负载复测，记录数据。
-7. 更新改动清单与回滚表。
-8. 最终验证：干净启动、`save-all flush`、`stop`、无残留进程。
+下面是一条可以照着执行的完整流程。每一步都有“检查点”，过不了就不要进入下一步。
+
+### 阶段 0：勘查
+
+目标：把版本、硬件、世界、负载记录成基线表。
+
+```powershell
+$mc = "<服务器目录>"
+
+# 版本栈
+Get-Content "$mc\server.properties" |
+  Select-String "level-name|level-type|view-distance|simulation-distance|max-players|sync-chunk-writes"
+& java -version 2>&1
+
+# 加载器 / 核心
+Get-ChildItem "$mc\mods" -Filter *.jar | Measure-Object
+Get-ChildItem "$mc\libraries" -Directory -ErrorAction SilentlyContinue | Select-Object -First 5
+
+# 硬件
+Get-CimInstance Win32_Processor | Select-Object NumberOfCores,NumberOfLogicalProcessors
+Get-CimInstance Win32_ComputerSystem | Select-Object @{n='RAM_GB';e={[math]::Round($_.TotalPhysicalMemory/1GB,1)}}
+Get-PSDrive C | Select-Object @{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}
+
+# JVM 参数
+Get-Content "$mc\start.bat"
+Get-Content "$mc\MCSL2ServerConfig.json" -ErrorAction SilentlyContinue
+
+# 世界规模
+Get-ChildItem "$mc\<world>" -Recurse -File -ErrorAction SilentlyContinue |
+  Measure-Object Length -Sum |
+  ForEach-Object { "world: {0:N0} MB / {1} files" -f ($_.Sum/1MB), $_.Count }
+```
+
+检查点：把结果填进改动清单的“现状速查”。不知道版本栈，就不要开始改。
+
+### 阶段 1：备份
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd_HHmm"
+Copy-Item "<服务器目录>" "<服务器目录>_backup_$stamp" -Recurse
+```
+
+至少备份：世界、`config\`、`server.properties`、`start.bat`、面板配置、`mods\` 列表。
+
+检查点：
+
+```powershell
+(Get-ChildItem "<备份>" -Recurse -File | Measure-Object).Count
+(Get-ChildItem "<服务器目录>" -Recurse -File | Measure-Object).Count
+```
+
+两边数量应基本一致。备份不完成，不进入下一阶段。
+
+### 阶段 2：基线
+
+目标：拿到“改之前”的 tick / GC / TPS。
+
+- 用 `templates/benchmark.ps1`，或自建等价脚本。
+- 固定假人数量与位置；不要每轮换负载。
+- 至少跑 2 轮，确认波动范围。
+
+检查点：两轮的 1 分钟中位数差在 1–2 ms 内，否则先排查负载是否稳定。
+
+### 阶段 3：零风险项
+
+顺序：JVM → `server.properties` → 系统层。
+
+每改一组，启动一次，记录：
+
+- `Done (Xs)`
+- 新增 ERROR/WARN
+- 启动后 5 分钟的 `Can't keep up`
+
+检查点：没有新增真实 ERROR；`Done` 时间没有明显恶化。失败就回滚这一组，不要叠加。
+
+### 阶段 4：mod 审计
+
+对每个“优化类”mod 重复：
+
+1. **定位配置**
+
+```powershell
+Get-ChildItem "$mc\config" -Recurse -File |
+  Where-Object { $_.Name -match "<modid>" } |
+  ForEach-Object { $_.FullName }
+```
+
+2. **读默认值与注释**：找 `default`、`may cause`、`incompatible`、`experimental`。
+
+3. **看 mixin 列表**
+
+```powershell
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$jar = "<mod.jar>"
+$z = [IO.Compression.ZipFile]::OpenRead($jar)
+$z.Entries | Where-Object { $_.FullName -match "mixins?\.json$" } | ForEach-Object {
+  $s = New-Object IO.StreamReader($_.Open()); $s.ReadToEnd(); $s.Close()
+}
+$z.Dispose()
+```
+
+4. **按包名归类**：`redstone`/`fluid`/`tick`/`spawn`/`ai`/`explosion`/`serialization`/`chunk` 是要重点看的。
+
+5. **改配置 → 启动 → 确认生效**：找日志里的 `N override(s) found` 或 `Config ... changed from X to Y`。
+
+6. **A/B**：同一世界、同一负载、同一脚本，至少两轮。
+
+检查点：配置生效有日志证据；A/B 有可复现差异。没有证据的“优化”不算完成。
+
+### 阶段 5：不可逆数据
+
+先判断 mod 有没有写自定义方块/物品/实体：
+
+```powershell
+# 解压后看注册类
+$z.Entries | Where-Object { $_.FullName -match "ModRegistry|Block|Item|EntityType" }
+```
+
+有注册 + 世界已经运行过 → 默认不移出。先备份，确认世界中没有该 ID，或保留 mod。
+
+检查点：世界备份存在；确认清单里写明“保留/移出”及原因。
+
+### 阶段 6：预生成
+
+```
+/chunky world <dimension>
+/chunky center <x> <z>
+/chunky radius <blocks>
+/chunky shape square
+/chunky start
+```
+
+运行中检查：
+
+```
+/chunky progress
+```
+
+完成后：`save-all flush` → `stop`，记录 region 数量与磁盘增量。
+
+检查点：进度 100%、无报错、region 数增加、磁盘足够。
+
+### 阶段 7：最终验证
+
+1. 干净启动，确认 `Done (Xs)`。
+2. 固定假人在线 5 分钟。
+3. 检查 `/tick query` 或 spark：TPS 是否稳定在 20。
+4. `save-all flush` → `stop`。
+5. 确认无残留 java 进程、无未落盘日志。
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Measure-Object
+```
+
+检查点：以上全部通过，才算“服务器处于可正常启动状态”。
+
+### 阶段 8：交付
+
+至少写清楚：
+
+1. 现状速查（版本、硬件、关键配置）
+2. 每项改动 + 理由 + 证据
+3. A/B 数据表
+4. 红线清单（哪些绝对不能加回来）
+5. 回滚表（每项对应哪个备份/哪条命令）
+6. 仍需用户拍板的项
+
+模板见 `templates/change-list.md`。
+
+---
+
+## 8. 模板
+
+| 文件 | 用途 |
+|---|---|
+| `templates/benchmark.ps1` | 通用基准脚本骨架：启动、预热、假人、采样、保存日志 |
+| `templates/change-list.md` | 改动清单骨架：现状、改动、A/B、红线、回滚 |
+| `templates/mod-audit.md` | 单个 mod 的审计记录表 |
+

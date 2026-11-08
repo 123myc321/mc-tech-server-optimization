@@ -49,7 +49,32 @@ C:\Users\<你>\.config\opencode\skills\mc-tech-server-optimization\SKILL.md
 6. 预生成
 7. 交付物
 8. 通用陷阱
-9. 工作流
+9. 详细流程（SOP，阶段 0–8）
+10. 模板
+
+## 模板
+
+| 文件 | 用途 |
+|---|---|
+| `templates/benchmark.ps1` | 通用基准脚本：启动、预热、假人、spark 采样、保存日志 |
+| `templates/change-list.md` | 改动清单骨架：现状、改动、A/B、红线、回滚 |
+| `templates/mod-audit.md` | 单个 mod 的审计记录表 |
+
+## 详细流程
+
+`SKILL.md` 的 §7 是一条可执行的 SOP：
+
+| 阶段 | 内容 |
+|---|---|
+| 0 | 勘查：版本、硬件、世界、负载 |
+| 1 | 备份：文件数校验 |
+| 2 | 基线：两轮固定负载 |
+| 3 | 零风险项：JVM、`server.properties`、系统层 |
+| 4 | mod 审计：配置、mixin、日志证据、A/B |
+| 5 | 不可逆数据：保留或备份后处理 |
+| 6 | 预生成：Chunky、进度、磁盘增量 |
+| 7 | 最终验证：干净启动、TPS、落盘、无残留 |
+| 8 | 交付：改动清单与回滚表 |
 
 ## License
 
