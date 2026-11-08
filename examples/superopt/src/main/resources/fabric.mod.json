@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "superopt",
+  "version": "${version}",
+  "name": "SuperOpt",
+  "description": "Server-side view distance caps and targeted optimizations for this server.",
+  "authors": [
+    "local"
+  ],
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "local.superopt.SuperOpt"
+    ]
+  },
+  "mixins": [
+    "superopt.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

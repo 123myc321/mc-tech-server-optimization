@@ -62,6 +62,13 @@ C:\Users\<你>\.config\opencode\skills\mc-tech-server-optimization\SKILL.md
 | `templates/mod-audit.md` | 单个 mod 的审计记录表 |
 | `templates/custom-mod.md` | 自制 mod 检查表：边界、mixin、构建、测试、数据安全 |
 
+## 示例
+
+| 路径 | 内容 |
+|---|---|
+| `examples/case-study.md` | 脱敏的真实案例：审计发现、改动分类、A/B 结果 |
+| `examples/superopt/` | 自制 mod 示例：异步玩家存档 + view-distance cap，含构建脚本与测试要点 |
+
 ## 详细流程
 
 `SKILL.md` 的 §7 是一条可执行的 SOP：

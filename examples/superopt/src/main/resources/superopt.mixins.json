@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "local.superopt.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "ServerPlayerMixin",
+    "PlayerDataStorageMixin",
+    "MinecraftServerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
