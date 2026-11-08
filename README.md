@@ -50,7 +50,8 @@ C:\Users\<你>\.config\opencode\skills\mc-tech-server-optimization\SKILL.md
 7. 交付物
 8. 通用陷阱
 9. 详细流程（SOP，阶段 0–8）
-10. 模板
+10. 自制 mod（边界、mixin、构建、测试、数据安全）
+11. 模板
 
 ## 模板
 
@@ -59,6 +60,7 @@ C:\Users\<你>\.config\opencode\skills\mc-tech-server-optimization\SKILL.md
 | `templates/benchmark.ps1` | 通用基准脚本：启动、预热、假人、spark 采样、保存日志 |
 | `templates/change-list.md` | 改动清单骨架：现状、改动、A/B、红线、回滚 |
 | `templates/mod-audit.md` | 单个 mod 的审计记录表 |
+| `templates/custom-mod.md` | 自制 mod 检查表：边界、mixin、构建、测试、数据安全 |
 
 ## 详细流程
 

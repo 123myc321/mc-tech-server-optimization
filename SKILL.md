@@ -417,4 +417,94 @@ Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Measure-Object
 | `templates/benchmark.ps1` | 通用基准脚本骨架：启动、预热、假人、采样、保存日志 |
 | `templates/change-list.md` | 改动清单骨架：现状、改动、A/B、红线、回滚 |
 | `templates/mod-audit.md` | 单个 mod 的审计记录表 |
+| `templates/custom-mod.md` | 自制 mod 的检查表：边界、mixin、构建、测试、回滚 |
+
+---
+
+## 9. 自制 mod
+
+现有 mod 没有你要的开关，或者你只需要一个很小的功能时，可以自制。但**自制 mod 不是免死金牌**：它同样要过 §1 的红线审计，同样要证明“不改机制”。
+
+### 9.1 先定义行为边界
+
+写代码前先回答：
+
+- 它改哪个类、哪个方法？
+- 输入/输出是否与原版逐字节一致？
+- 失败时（异常、超时、OOM、kill -9）会不会留下坏状态？
+- 能不能用一个开关完全回退到原版路径？
+
+如果答不上来，先不要写。
+
+### 9.2 开发环境
+
+- JDK 版本与 MC 版本匹配（新版 MC 往往要求最新 LTS 或更高）。
+- Fabric Loader / Fabric API 版本与目标服务端一致。
+- **映射**：新版 MC 可能使用 Mojang 官方名。启动日志出现 `Mappings not present!` 通常意味着按 Mojang 名编译。
+- Gradle / Loom 下载不稳定时，不必死磕：可以直接 `javac` + 手写构建脚本，把依赖 jar 加到 classpath，再 `jar` 打包。产物一样能进 `mods/`。
+
+### 9.3 mixin 配置
+
+`src/main/resources/<modid>.mixins.json`：
+
+```json
+{
+  "required": true,
+  "package": "com.example.mymod.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": ["MyMixin"],
+  "injectors": { "defaultRequire": 1 }
+}
+```
+
+- `compatibilityLevel` 必须覆盖目标类的字节码版本；新版 MC 常见需要 `JAVA_25`。
+- 优先 `@Inject` / `@Redirect` / `@ModifyVariable`，**避免 `@Overwrite`**：overwrite 会绕过其他 mod 的注入，冲突面最大。
+- 只注入必要的方法，不要为了省事替换整个 tick 循环。
+
+### 9.4 常见 API 变化（写进你自己的清单）
+
+不同版本会变，遇到就记录：
+
+- `hasPermission(int)` 在新版本被移除 → 改用新的权限检查 API。
+- `GameProfile.getName()` 改为 `name()`。
+- 记录类名、方法签名、替代写法的对应关系，下次直接查表。
+
+### 9.5 构建
+
+最小构建流程：
+
+1. `javac -cp "<minecraft jar>;<loader jars>;<fabric api jars>" -d out src/...`
+2. 复制 `fabric.mod.json`、`<modid>.mixins.json`、`assets/` 到 `out/`
+3. `jar --create --file <modid>-<version>.jar -C out .`
+4. 放进 `mods/`，启动验证
+
+`fabric.mod.json` 至少写清 `id`、`version`、`entrypoints`、`mixins`、`depends`。
+
+### 9.6 测试
+
+自制 mod 必须比现成 mod 测得更狠：
+
+| 测试 | 方法 |
+|---|---|
+| 启动 | `Done (Xs)`，无 mixin 应用失败 |
+| 功能 | 触发目标路径，确认行为符合预期 |
+| 回退 | 开关设为关闭，确认完全走原版 |
+| 数据安全 | 写入后 `save-all flush` + `stop`；有条件就模拟 kill -9 |
+| 冲突 | 与现有优化 mod 同时加载，看 mixin 冲突日志 |
+| 性能 | 同负载 A/B，至少两轮 |
+
+异步类功能（异步存档、异步序列化）额外要求：
+
+- `stop` / `save-all` 时必须 drain 队列，不能丢最后一批写入。
+- 崩溃场景要明确“可能丢多少”，并在文档里写出来。
+- 默认值倾向保守；把“激进”作为可选项。
+
+### 9.7 交付
+
+- 源码 + 构建脚本 + jar
+- 配置项与默认值
+- 开关与回滚方式（删 jar / 改配置）
+- 已知限制（崩溃丢数据窗口、与其他 mod 的冲突）
+
+检查表见 `templates/custom-mod.md`。
 
